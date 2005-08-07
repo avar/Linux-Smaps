@@ -1,0 +1,10 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/Linux-Smaps.t
+lib/Linux/Smaps.pm
+mk_README.sh
+perl-Linux-Smaps.spec
+bench.pl
+META.yml                                 Module meta-data (added by MakeMaker)

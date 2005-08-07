@@ -1,0 +1,184 @@
+NAME
+    Linux::Smaps - a Perl interface to /proc/PID/smaps
+
+SYNOPSIS
+      use Linux::Smaps;
+      my $map=Linux::Smaps->new($pid);
+      my @maps=$map->maps;
+      my $private_dirty=$map->private_dirty;
+      ...
+
+DESCRIPTION
+    The /proc/PID/smaps files in modern linuxes provides very detailed
+    information about a processes memory consumption. It particularly
+    includes a way to estimate the effect of copy-on-write. This module
+    implements a Perl interface.
+
+  CONSTRUCTOR, OBJECT INITIALIZATION, etc.
+    Linux::Smaps->new($pid)
+        creates and initializes a "Linux::Smaps" object. Returns the object
+        or "undef" if a PID was given and "update" has failed.
+
+    $self->pid($pid) or $self->pid=$pid
+        get/set the PID.
+
+    $self->update
+        reinitializes the object; rereads /proc/PID/smaps. Returns the
+        object on success or "undef" otherwize.
+
+    $self->lasterror
+        "update()" and "new()" return "undef" on failure. "lasterror()"
+        returns a more verbose reason. Also $! can be checked.
+
+  INFORMATION RETRIEVAL
+    $self->vmas
+        returns a list of "Linux::Smaps::VMA" objects each describing a vm
+        area, see below.
+
+    $self->size
+    $self->rss
+    $self->shared_clean
+    $self->shared_dirty
+    $self->private_clean
+    $self->private_dirty
+        these methods compute the sums of the appropriate values of all
+        vmas.
+
+    $self->stack
+    $self->heap
+    $self->vdso
+        these are shortcuts to the appropiate "Linux::Smaps::VMA" objects.
+
+    $self->all
+    $self->named
+    $self->unnamed
+        In array context these functions return a list of
+        "Linux::Smaps::VMA" objects representing named or unnamed maps or
+        simply all vmas. Thus, in array context "all()" is equivalent to
+        "vmas()".
+
+        In scalar context these functions create a fake "Linux::Smaps::VMA"
+        object containing the summaries of the "size", "rss",
+        "shared_clean", "shared_dirty", "private_clean" and "private_dirty"
+        fields.
+
+    $self->names
+        returns a list of vma names, i.e. the files that are mapped.
+
+Linux::Smaps::VMA objects
+    normally these objects represent a single vm area:
+
+    $self->vma_start
+    $self->vma_end
+        start and end address
+
+    $self->r
+    $self->w
+    $self->x
+    $self->mayshare
+        these correspond to the VM_READ, VM_WRITE, VM_EXEC and VM_MAYSHARE
+        flags. see Linux kernel for more information.
+
+    $self->file_off
+    $self->dev_major
+    $self->dev_minor
+    $self->inode
+    $self->filename
+        describe the file area that is mapped.
+
+    $self->size
+        the same as vma_end - vma_start.
+
+    $self->rss
+        what part is resident.
+
+    $self->shared_clean
+    $self->shared_dirty
+    $self->private_clean
+    $self->private_dirty
+        "shared" means "page_count(page)>=2" (see Linux kernel), i.e. the
+        page is shared between several processes. "private" pages belong
+        only to one process.
+
+        "dirty" pages are written to in RAM but not to the corresponding
+        file.
+
+Example: The copy-on-write effect
+     use strict;
+     use Linux::Smaps;
+
+     my $x="a"x(1024*1024);         # a long string of "a"
+     if( fork ) {
+       my $s=Linux::Smaps->new($$);
+       my $before=$s->all;
+       $x=~tr/a/b/;                 # change "a" to "b" in place
+       #$x="b"x(1024*1024);         # assignment
+       $s->update;
+       my $after=$s->all;
+       foreach my $n (qw{rss size shared_clean shared_dirty
+                         private_clean private_dirty}) {
+         print "$n: ",$before->$n," => ",$after->$n,": ",
+                $after->$n-$before->$n,"\n";
+       }
+       wait;
+     } else {
+       sleep 1;
+     }
+
+    This script may give the following output:
+
+     rss: 4160 => 4252: 92
+     size: 6916 => 7048: 132
+     shared_clean: 1580 => 1596: 16
+     shared_dirty: 2412 => 1312: -1100
+     private_clean: 0 => 0: 0
+     private_dirty: 168 => 1344: 1176
+
+    $x is changed in place. Hence, the overall process size (size and rss)
+    would not grow much. But before the "tr" operation $x was shared by
+    copy-on-write between the 2 processes. Hence, we see a loss of
+    "shared_dirty" (only a little more than our 1024 kB string) and almost
+    the same growth of "private_dirty".
+
+    Exchanging the "tr"-operation to an assingment of a MB of "b" yields the
+    following figures:
+
+     rss: 4160 => 5276: 1116
+     size: 6916 => 8076: 1160
+     shared_clean: 1580 => 1592: 12
+     shared_dirty: 2432 => 1304: -1128
+     private_clean: 0 => 0: 0
+     private_dirty: 148 => 2380: 2232
+
+    Now we see the overall process size grows a little more than a MB.
+    "shared_dirty" drops almost a MB and "private_dirty" adds almost 2 MB.
+    That means perl first constructs a 1 MB string of "b". This adds 1 MB to
+    "size", "rss" and "private_dirty" and then copies it to $x. This takes
+    another MB from "shared_dirty" and adds it to "private_dirty".
+
+  EXPORT
+    Not an Exporter;
+
+SEE ALSO
+    Linux Kernel.
+
+AUTHOR
+    Torsten Foertsch, <torsten.foertsch@gmx.net>
+
+COPYRIGHT AND LICENSE
+    Copyright (C) 2005 by Torsten Foertsch
+
+    This library is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself, either Perl version 5.8.5 or, at
+    your option, any later version of Perl 5 you may have available.
+
+INSTALLATION
+     perl Makefile.PL
+     make
+     make test
+     make install
+
+DEPENDENCIES
+     perl 5.8.0
+     Class::Member 1.3
+
