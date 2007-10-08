@@ -39,7 +39,7 @@ SKIP: {
   chomp $init;
   $init=~s!^.*?/!/!;
   $init=~s!\s(deleted)$!!;
-  $s=Linux::Smaps->new(1);
+  $s->pid=1; $s->update;
   ok( ($s->vmas)[0]->file_name eq $init, 'check pid==1 to be '.$init );
 }
 
@@ -47,14 +47,19 @@ eval {Linux::Smaps->new(0)};
 ok $@ eq "Linux::Smaps: Cannot open /proc/0/smaps: No such file or directory\n",
   'error1';
 
-eval {Linux::Smaps->new(-1)};
-ok $@ eq "Linux::Smaps: Cannot open /proc/-1/smaps: No such file or directory\n",
+$s=Linux::Smaps->new(uninitialized=>1);
+$s->pid=-1; $s->update;
+ok $s->lasterror eq "Cannot open /proc/-1/smaps: No such file or directory",
   'error2';
 
 my $fn=$0;
 $fn=~s!/*t/+[^/]*$!! or die "Wrong test script location: $0";
 $fn='.' unless( length $fn );
-$s=Linux::Smaps->new(filename=>$fn.'/t/smaps');
+
+$s->lasterror=undef;
+$s->pid=undef;
+$s->filename=$fn.'/t/smaps';
+$s->update;
 ok( ($s->vmas)[0]->file_name eq '/opt/apache22-worker/sbin/httpd',
     'filename parameter to new()' );
 

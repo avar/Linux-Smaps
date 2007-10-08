@@ -42,6 +42,17 @@ DESCRIPTION
     $self->filename($name) or $self->filename=$name
         get/set parameters.
 
+        If a filename is set "update()" reads that file. Otherwize a file
+        name is constructed from "$self->procdir", "$self->pid" and the name
+        "smaps". The constructed file name is not saved in the
+        "Linux::Smaps" object to allow loops like this:
+
+         foreach (@pids) {
+             $smaps->pid=$_;
+             $smaps->update;
+             process $smaps;
+         }
+
     $self->update
         reinitializes the object; rereads the underlying file. Returns the
         object or "undef" on error. The actual reason can be obtained via

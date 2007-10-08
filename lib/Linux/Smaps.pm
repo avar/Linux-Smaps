@@ -7,7 +7,7 @@ no warnings qw(uninitialized portable);
 use Class::Member::HASH qw{pid lasterror filename procdir
 			   _elem -CLASS_MEMBERS};
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 sub new {
   my $class=shift;
@@ -15,13 +15,16 @@ sub new {
   my $I=bless {}=>$class;
   my %h;
 
+  $I->procdir='/proc';
+  $I->pid='self';
+
   if( @_==1 ) {
     $I->pid=shift;
   } else {
     our @CLASS_MEMBERS;
     %h=@_;
     foreach my $k (@CLASS_MEMBERS) {
-      $I->$k=$h{$k};
+      $I->$k=$h{$k} if( exists $h{$k});
     }
   }
 
@@ -36,11 +39,19 @@ sub new {
 sub update {
   my $I=shift;
 
-  $I->pid='self' unless( defined $I->pid );
-  $I->procdir='/proc' unless( defined $I->procdir );
-  $I->filename=$I->procdir.'/'.$I->pid.'/smaps' unless( defined $I->filename );
+  my $name;
 
-  my $name=$I->filename;
+  # this way one can use one object to loop through a list of processes like:
+  # foreach (@pids) {
+  #   $smaps->pid=$_; $smaps->update;
+  #   process($smaps);
+  # }
+  if( defined $I->filename ) {
+    $name=$I->filename;
+  } else {
+    $name=$I->procdir.'/'.$I->pid.'/smaps';
+  }
+
   open my $f, $name or do {
     $I->lasterror="Cannot open $name: $!";
     return;
@@ -340,6 +351,17 @@ C<procdir> or C<filename> can be passed.
 =item B<< $self->filename($name) >> or B<< $self->filename=$name >>
 
 get/set parameters.
+
+If a filename is set C<update()> reads that file. Otherwize a file name is
+constructed from C<< $self->procdir >>, C<< $self->pid >> and the name
+C<smaps>. The constructed file name is not saved in the C<Linux::Smaps>
+object to allow loops like this:
+
+ foreach (@pids) {
+     $smaps->pid=$_;
+     $smaps->update;
+     process $smaps;
+ }
 
 =item B<< $self->update >>
 

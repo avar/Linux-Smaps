@@ -21,6 +21,7 @@ WriteMakefile(
     dist              => {
 			  PREOP => './mk_README.sh',
 			 },
+    PMLIBDIRS         => ['lib'],
 );
 
 sub MY::postamble {
