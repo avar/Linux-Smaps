@@ -1,10 +1,11 @@
 use 5.008;
 use ExtUtils::MakeMaker;
 
-die "ERROR: /proc/$$/smaps not found.\n",
-    "       Maybe your kernel lacks the appropriate patch.\n",
-    "       linux-2.6.13-rc4-mm1 is known to work good with this module.\n"
-  unless( -f "/proc/$$/smaps" );
+warn <<"EOF" unless( -f "/proc/$$/smaps" );
+WARNING: /proc/$$/smaps not found. Maybe your kernel lacks the feature.
+Maybe the proc filesystem is mounted on another location. A few tests
+will be ommitted during "make test".
+EOF
 
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
@@ -21,3 +22,13 @@ WriteMakefile(
 			  PREOP => './mk_README.sh',
 			 },
 );
+
+sub MY::postamble {
+  return <<'EOF';
+README: lib/Linux/Smaps.pm mk_README.sh
+	./mk_README.sh
+
+rpm: dist
+	rpmbuild -ba perl-Linux-Smaps.spec
+EOF
+}

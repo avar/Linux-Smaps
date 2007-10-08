@@ -2,6 +2,8 @@ Changes
 Makefile.PL
 MANIFEST
 README
+t/smaps
+t/smaps64
 t/Linux-Smaps.t
 lib/Linux/Smaps.pm
 mk_README.sh

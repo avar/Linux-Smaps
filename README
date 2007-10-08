@@ -15,16 +15,37 @@ DESCRIPTION
     implements a Perl interface.
 
   CONSTRUCTOR, OBJECT INITIALIZATION, etc.
+    Linux::Smaps->new
     Linux::Smaps->new($pid)
-        creates and initializes a "Linux::Smaps" object. Returns the object
-        or "undef" if a PID was given and "update" has failed.
+    Linux::Smaps->new(pid=>$pid, procdir=>'/proc')
+    Linux::Smaps->new(filename=>'/proc/self/smaps')
+        creates and initializes a "Linux::Smaps" object. On error an
+        exception is thrown. "new()" may fail if the smaps file is not
+        readable or if the file format is wrong.
+
+        "new()" without parameter is equivalent to "new('self')" or
+        "new(pid=>'self')". With the "procdir" parameter the mount point of
+        the proc filesystem can be set if it differs from the standard
+        "/proc".
+
+        The "filename" parameter sets the name of the smaps file directly.
+        This way also files outside the standard "/proc" tree can be
+        analyzed.
+
+    Linux::Smaps->new(uninitialized=>1)
+        returns an uninitialized object. This makes "new()" simply skip the
+        "update()" call after setting all parameters. Additional parameters
+        like "pid", "procdir" or "filename" can be passed.
 
     $self->pid($pid) or $self->pid=$pid
-        get/set the PID.
+    $self->procdir($dir) or $self->procdir=$dir
+    $self->filename($name) or $self->filename=$name
+        get/set parameters.
 
     $self->update
-        reinitializes the object; rereads /proc/PID/smaps. Returns the
-        object on success or "undef" otherwize.
+        reinitializes the object; rereads the underlying file. Returns the
+        object or "undef" on error. The actual reason can be obtained via
+        "lasterror()".
 
     $self->lasterror
         "update()" and "new()" return "undef" on failure. "lasterror()"
@@ -65,6 +86,20 @@ DESCRIPTION
     $self->names
         returns a list of vma names, i.e. the files that are mapped.
 
+    ($new, $diff, $old)=$self->diff( $other )
+        $other is assumed to be also a "Linux::Smaps" instance. 3 arrays are
+        returned. The first one ($new) is a list of vmas that are contained
+        in $self but not in $other. The second one ($diff) contains a list
+        of pairs (2-element arrays) of vmas that differ between $self and
+        $other. The 3rd one ($old) is a list of vmas that are contained in
+        $other but not in $self.
+
+        Vmas are identified as corresponding if their "vma_start" fields
+        match. They are considered different if they differ in one of the
+        following fields: "vma_end", "r", "w", "x", "mayshare", "file_off",
+        "dev_major", "dev_minor", "inode", "file_name", "shared_clean",
+        "shared_diry", "private_clean" and "private_dirty".
+
 Linux::Smaps::VMA objects
     normally these objects represent a single vm area:
 
@@ -83,11 +118,11 @@ Linux::Smaps::VMA objects
     $self->dev_major
     $self->dev_minor
     $self->inode
-    $self->filename
+    $self->file_name
         describe the file area that is mapped.
 
     $self->size
-        the same as vma_end - vma_start.
+        the same as vma_end - vma_start but in kB.
 
     $self->rss
         what part is resident.
@@ -156,7 +191,42 @@ Example: The copy-on-write effect
     "size", "rss" and "private_dirty" and then copies it to $x. This takes
     another MB from "shared_dirty" and adds it to "private_dirty".
 
-  EXPORT
+A special note on copy on write measurements
+    The proc filesystem reports a page as shared if it belongs multiple
+    processes and as private if it belongs to only one process. But there is
+    an exception. If a page is currently paged out (that means it is not in
+    core) all its attributes including the reference count are paged out as
+    well. So the reference count cannot be read without paging in the page.
+    In this case a page is neither reported as private nor as shared. It is
+    only included in the process size.
+
+    Thus, to exaclty measure which pages are shared among N processes at
+    least one of them must be completely in core. This way all pages that
+    can possibly be shared are in core and their reference counts are
+    accessible.
+
+    The mlockall(2) syscall may help in this situation. It locks all pages
+    of a process to main memory:
+
+     require 'syscall.ph';
+     require 'sys/mmap.ph';
+
+     0==syscall &SYS_mlockall, &MCL_CURRENT | &MCL_FUTURE or
+         die "ERROR: mlockall failed: $!\n";
+
+    This snippet in one of the processes locks it to the main memory. If all
+    processes are created from the same parent it is executed best just
+    before the parent starts to fork off children. The memory lock is not
+    inherited by the children. So all private pages of the children are
+    swappable.
+
+    Since we are talking about Linux only the snippet can be shortened:
+
+     0==syscall 152, 3 or die "ERROR: mlockall failed: $!\n";
+
+    which removes the dependencies from syscall.ph and sys/mmap.ph.
+
+EXPORT
     Not an Exporter;
 
 SEE ALSO
@@ -166,7 +236,7 @@ AUTHOR
     Torsten Foertsch, <torsten.foertsch@gmx.net>
 
 COPYRIGHT AND LICENSE
-    Copyright (C) 2005 by Torsten Foertsch
+    Copyright (C) 2005-2007 by Torsten Foertsch
 
     This library is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself, either Perl version 5.8.5 or, at

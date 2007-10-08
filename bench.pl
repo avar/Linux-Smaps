@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use Benchmark ':all';
+use Benchmark qw':all :hireswallclock';
 
 open my $m, "/proc/$$/maps" or die "ERROR: Cannot open /proc/$$/maps: $!\n";
 open my $s, "/proc/$$/smaps" or die "ERROR: Cannot open /proc/$$/smaps: $!\n";

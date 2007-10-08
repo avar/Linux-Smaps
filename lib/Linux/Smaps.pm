@@ -2,58 +2,61 @@ package Linux::Smaps;
 
 use 5.008;
 use strict;
-no warnings qw(uninitialized);
-use Class::Member::HASH qw{pid lasterror
+use warnings FATAL=>'all';
+no warnings qw(uninitialized portable);
+use Class::Member::HASH qw{pid lasterror filename procdir
 			   _elem -CLASS_MEMBERS};
 
-our $VERSION = '0.01';
+our $VERSION = '0.03';
 
 sub new {
   my $class=shift;
   $class=ref($class) if( ref($class) );
   my $I=bless {}=>$class;
+  my %h;
 
   if( @_==1 ) {
     $I->pid=shift;
   } else {
     our @CLASS_MEMBERS;
-    my %h=@_;
+    %h=@_;
     foreach my $k (@CLASS_MEMBERS) {
       $I->$k=$h{$k};
     }
   }
 
-  return defined($I->pid) ? $I->update : $I;
+  return $I if( $h{uninitialized} );
+
+  my $rc=$I->update;
+  die __PACKAGE__.": ".$I->lasterror."\n" unless( $rc );
+
+  return $rc;
 }
 
 sub update {
   my $I=shift;
 
-  return unless( $I->pid>0 );
+  $I->pid='self' unless( defined $I->pid );
+  $I->procdir='/proc' unless( defined $I->procdir );
+  $I->filename=$I->procdir.'/'.$I->pid.'/smaps' unless( defined $I->filename );
 
-  my $name='/proc/'.$I->pid.'/smaps';
-  #-f $name or $name='/proc/'.$I->pid.'/maps';
+  my $name=$I->filename;
   open my $f, $name or do {
     $I->lasterror="Cannot open $name: $!";
     return;
   };
 
-  # nasty hack: with my current linux kernel /proc/PID/smaps must be
-  # read in 1024 byte chunks.
-  my $buf="";
-  my $off=0;
-  my $n;
-  while( $n=sysread $f, $buf, 1024, $off ) {$off+=$n;}
-
   my $current;
   $I->_elem=[];
-  foreach my $l (split /\n/, $buf) {
+  my $l;
+  while( defined($l=<$f>) ) {
     if( $l=~/([\da-f]+)-([\da-f]+)\s                # range
              ([r\-])([w\-])([x\-])([sp])\s          # access mode
              ([\da-f]+)\s                           # page offset in file
              ([\da-f]+):([\da-f]+)\s                # device
              (\d+)\s*                               # inode
-             (.*)		                    # file name
+             (.*?)		                    # file name
+	     (\s\(deleted\))?$
 	    /xi ) {
       push @{$I->_elem}, $current=Linux::Smaps::VMA->new;
       $current->vma_start=hex $1;
@@ -67,11 +70,13 @@ sub update {
       $current->dev_minor=hex $9;
       $current->inode=$10;
       $current->file_name=$11;
+      $current->is_deleted=defined( $12 );
     } elsif( $l=~/^(\w+):\s*(\d+) kB$/ ) {
       my $m=lc $1;
       $current->$m=$2;
     } else {
-      die __PACKAGE__.":: not parsed: $l\n";
+      $I->lasterror="$name($.): not parsed: $l";
+      return;
     }
   }
 
@@ -189,13 +194,89 @@ sub names {
   return keys %h;
 }
 
+sub diff {
+  my $I=shift;
+  my @my_special;
+  my @my=map {
+    if( $_->file_name=~/\[\w+\]/ ) {
+      push @my_special, $_;
+      ();
+    } else {
+      $_;
+    }
+  } $I->vmas;
+  my %other_special;
+  my %other=map {
+    if( $_->file_name=~/^(\[\w+\])$/ ) {
+      $other_special{$1}=$_;
+      ();
+    } else {
+      ($_->vma_start=>$_);
+    }
+  } shift->vmas;
+
+  my @new;
+  my @diff;
+  my @old;
+
+  foreach my $vma (@my_special) {
+    if( exists $other_special{$vma->file_name} ) {
+      my $x=delete $other_special{$vma->file_name};
+      push @diff, [$vma, $x]
+	if( $vma->vma_start != $x->vma_start or
+	    $vma->vma_end != $x->vma_end or
+	    $vma->shared_clean != $x->shared_clean or
+	    $vma->shared_dirty != $x->shared_dirty or
+	    $vma->private_clean != $x->private_clean or
+	    $vma->private_dirty != $x->private_dirty or
+	    $vma->dev_major != $x->dev_major or
+	    $vma->dev_minor != $x->dev_minor or
+	    $vma->r != $x->r or
+	    $vma->w != $x->w or
+	    $vma->x != $x->x or
+	    $vma->file_off != $x->file_off or
+	    $vma->inode != $x->inode or
+	    $vma->mayshare != $x->mayshare );
+    } else {
+      push @new, $vma;
+    }
+  }
+  @old=values %other_special;
+
+  foreach my $vma (@my) {
+    if( exists $other{$vma->vma_start} ) {
+      my $x=delete $other{$vma->vma_start};
+      push @diff, [$vma, $x]
+	if( $vma->vma_end != $x->vma_end or
+	    $vma->shared_clean != $x->shared_clean or
+	    $vma->shared_dirty != $x->shared_dirty or
+	    $vma->private_clean != $x->private_clean or
+	    $vma->private_dirty != $x->private_dirty or
+	    $vma->dev_major != $x->dev_major or
+	    $vma->dev_minor != $x->dev_minor or
+	    $vma->r != $x->r or
+	    $vma->w != $x->w or
+	    $vma->x != $x->x or
+	    $vma->file_off != $x->file_off or
+	    $vma->inode != $x->inode or
+	    $vma->mayshare != $x->mayshare or
+	    $vma->file_name ne $x->file_name );
+    } else {
+      push @new, $vma;
+    }
+  }
+  push @old, sort {$a->vma_start <=> $b->vma_start} values %other;
+
+  return \@new, \@diff, \@old;
+}
+
 sub vmas {return @{$_[0]->_elem};}
 
 package Linux::Smaps::VMA;
 
 use strict;
 use Class::Member::HASH qw(vma_start vma_end r w x mayshare file_off
-			   dev_major dev_minor inode file_name
+			   dev_major dev_minor inode file_name is_deleted
 			   size rss shared_clean shared_dirty
 			   private_clean private_dirty);
 
@@ -227,19 +308,43 @@ interface.
 
 =over 4
 
+=item B<< Linux::Smaps->new >>
+
 =item B<< Linux::Smaps->new($pid) >>
 
-creates and initializes a C<Linux::Smaps> object. Returns the object
-or C<undef> if a PID was given and C<update> has failed.
+=item B<< Linux::Smaps->new(pid=>$pid, procdir=>'/proc') >>
+
+=item B<< Linux::Smaps->new(filename=>'/proc/self/smaps') >>
+
+creates and initializes a C<Linux::Smaps> object. On error an exception is
+thrown. C<new()> may fail if the smaps file is not readable or if the file
+format is wrong.
+
+C<new()> without parameter is equivalent to C<new('self')> or
+C<< new(pid=>'self') >>. With the C<procdir> parameter the mount point of
+the proc filesystem can be set if it differs from the standard C</proc>.
+
+The C<filename> parameter sets the name of the smaps file directly. This way
+also files outside the standard C</proc> tree can be analyzed.
+
+=item B<< Linux::Smaps->new(uninitialized=>1) >>
+
+returns an uninitialized object. This makes C<new()> simply skip the C<update()>
+call after setting all parameters. Additional parameters like C<pid>,
+C<procdir> or C<filename> can be passed.
 
 =item B<< $self->pid($pid) >> or B<< $self->pid=$pid >>
 
-get/set the PID.
+=item B<< $self->procdir($dir) >> or B<< $self->procdir=$dir >>
+
+=item B<< $self->filename($name) >> or B<< $self->filename=$name >>
+
+get/set parameters.
 
 =item B<< $self->update >>
 
-reinitializes the object; rereads /proc/PID/smaps. Returns the object
-on success or C<undef> otherwize.
+reinitializes the object; rereads the underlying file. Returns the object
+or C<undef> on error. The actual reason can be obtained via C<lasterror()>.
 
 =item B<< $self->lasterror >>
 
@@ -297,6 +402,21 @@ C<shared_dirty>, C<private_clean> and C<private_dirty> fields.
 
 returns a list of vma names, i.e. the files that are mapped.
 
+=item B<< ($new, $diff, $old)=$self->diff( $other ) >>
+
+$other is assumed to be also a C<Linux::Smaps> instance. 3 arrays are
+returned. The first one ($new) is a list of vmas that are contained in
+$self but not in $other. The second one ($diff) contains a list of pairs
+(2-element arrays) of vmas that differ between $self and $other. The
+3rd one ($old) is a list of vmas that are contained in $other but not in
+$self.
+
+Vmas are identified as corresponding if their C<vma_start> fields match.
+They are considered different if they differ in one of the following fields:
+C<vma_end>, C<r>, C<w>, C<x>, C<mayshare>, C<file_off>, C<dev_major>,
+C<dev_minor>, C<inode>, C<file_name>, C<shared_clean>, C<shared_diry>,
+C<private_clean> and C<private_dirty>.
+
 =back
 
 =head1 Linux::Smaps::VMA objects
@@ -330,13 +450,13 @@ see Linux kernel for more information.
 
 =item B<< $self->inode >>
 
-=item B<< $self->filename >>
+=item B<< $self->file_name >>
 
 describe the file area that is mapped.
 
 =item B<< $self->size >>
 
-the same as vma_end - vma_start.
+the same as vma_end - vma_start but in kB.
 
 =item B<< $self->rss >>
 
@@ -412,7 +532,41 @@ That means perl first constructs a 1 MB string of C<b>. This adds 1 MB to
 C<size>, C<rss> and C<private_dirty> and then copies it to C<$x>. This
 takes another MB from C<shared_dirty> and adds it to C<private_dirty>.
 
-=head2 EXPORT
+=head1 A special note on copy on write measurements
+
+The proc filesystem reports a page as shared if it belongs multiple
+processes and as private if it belongs to only one process. But there
+is an exception. If a page is currently paged out (that means it is not
+in core) all its attributes including the reference count are paged out
+as well. So the reference count cannot be read without paging in the page.
+In this case a page is neither reported as private nor as shared. It is
+only included in the process size.
+
+Thus, to exaclty measure which pages are shared among N processes at least
+one of them must be completely in core. This way all pages that can
+possibly be shared are in core and their reference counts are accessible.
+
+The L<mlockall(2)> syscall may help in this situation. It locks all pages
+of a process to main memory:
+
+ require 'syscall.ph';
+ require 'sys/mmap.ph';
+
+ 0==syscall &SYS_mlockall, &MCL_CURRENT | &MCL_FUTURE or
+     die "ERROR: mlockall failed: $!\n";
+
+This snippet in one of the processes locks it to the main memory. If all
+processes are created from the same parent it is executed best just before
+the parent starts to fork off children. The memory lock is not inherited
+by the children. So all private pages of the children are swappable.
+
+Since we are talking about Linux only the snippet can be shortened:
+
+ 0==syscall 152, 3 or die "ERROR: mlockall failed: $!\n";
+
+which removes the dependencies from F<syscall.ph> and F<sys/mmap.ph>.
+
+=head1 EXPORT
 
 Not an Exporter;
 
@@ -426,7 +580,7 @@ Torsten Foertsch, E<lt>torsten.foertsch@gmx.netE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005 by Torsten Foertsch
+Copyright (C) 2005-2007 by Torsten Foertsch
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.5 or,
