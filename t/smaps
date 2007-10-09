@@ -5,6 +5,7 @@ Shared_Clean:        12 kB
 Shared_Dirty:         0 kB
 Private_Clean:        8 kB
 Private_Dirty:        0 kB
+Referenced:          13 kB
 080aa000-080ab000 r--p 00062000 03:05 1142298    /opt/apache22-worker/sbin/httpd
 Size:                 4 kB
 Rss:                  0 kB
@@ -26,6 +27,7 @@ Shared_Clean:         0 kB
 Shared_Dirty:         0 kB
 Private_Clean:        8 kB
 Private_Dirty:        0 kB
+Referenced:          12 kB
 b755f000-b7563000 r-xp 00000000 03:05 32475      /lib/libnss_dns-2.5.so
 Size:                16 kB
 Rss:                  0 kB

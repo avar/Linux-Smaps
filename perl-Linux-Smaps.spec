@@ -6,7 +6,7 @@ Obsoletes:    p_Linux_Smaps
 Requires:     perl = %{perl_version}
 Autoreqprov:  on
 Summary:      Linux::Smaps
-Version:      0.04
+Version:      0.05
 Release:      1
 Source:       Linux-Smaps-%{version}.tar.gz
 BuildRoot:    %{_tmppath}/%{name}-%{version}-build

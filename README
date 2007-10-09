@@ -73,13 +73,24 @@ DESCRIPTION
     $self->shared_dirty
     $self->private_clean
     $self->private_dirty
-        these methods compute the sums of the appropriate values of all
+        these methods compute the sums of the corresponding values of all
         vmas.
+
+        "size", "rss", "shared_clean", "shared_dirty", "private_clean" and
+        "private_dirty" methods are unknown until the first call to
+        "Linux::Smaps::update()". They are created on the fly. This is to
+        make the module extendable as new features are added to the smaps
+        file by the kernel. As long as the corresponding smaps file lines
+        match "^(\w+):\s*(\d+) kB$" new accessor methods are created.
+
+        At the time of this writing at least one new field ("referenced") is
+        on the way but all my kernels still lack it.
 
     $self->stack
     $self->heap
     $self->vdso
-        these are shortcuts to the appropiate "Linux::Smaps::VMA" objects.
+        these are shortcuts to the corresponding "Linux::Smaps::VMA"
+        objects.
 
     $self->all
     $self->named
@@ -148,6 +159,16 @@ Linux::Smaps::VMA objects
 
         "dirty" pages are written to in RAM but not to the corresponding
         file.
+
+    "size", "rss", "shared_clean", "shared_dirty", "private_clean" and
+    "private_dirty" methods are unknown until the first call to
+    "Linux::Smaps::update()". They are created on the fly. This is to make
+    the module extendable as new features are added to the smaps file by the
+    kernel. As long as the corresponding smaps file lines match
+    "^(\w+):\s*(\d+) kB$" new accessor methods are created.
+
+    At the time of this writing at least one new field ("referenced") is on
+    the way but all my kernels still lack it.
 
 Example: The copy-on-write effect
      use strict;

@@ -1,7 +1,32 @@
-use Test::More tests => 23;
+use Test::More tests => 34;
 BEGIN { use_ok('Linux::Smaps') };
 
 my ($s, $old);
+
+my $fn=$0;
+$fn=~s!/*t/+[^/]*$!! or die "Wrong test script location: $0";
+$fn='.' unless( length $fn );
+
+$s=Linux::Smaps->new(uninitialized=>1);
+ok( !Linux::Smaps::VMA->can('size'),
+    'VMA method "size" unknown before first smaps file read' );
+ok( !Linux::Smaps->can('shared_dirty'),
+    'Smaps method "shared_dirty" unknown before first smaps file read' );
+$s->filename=$fn.'/t/smaps';
+$s->lasterror=undef;
+$s->update;
+ok( Linux::Smaps->can('size'),
+    'VMA method "size" known after first smaps file read' );
+ok( Linux::Smaps->can('shared_dirty'),
+    'Smaps method "shared_dirty" known after first smaps file read' );
+
+ok( $s->size('/opt/apache22-worker/sbin/httpd')==408, 'summary size' );
+ok( $s->rss('/opt/apache22-worker/sbin/httpd')==32, 'summary rss' );
+ok( $s->shared_clean('/opt/apache22-worker/sbin/httpd')==12, 'summary shared_clean' );
+ok( $s->shared_dirty('/opt/apache22-worker/sbin/httpd')==0, 'summary shared_dirty' );
+ok( $s->private_clean('/opt/apache22-worker/sbin/httpd')==12, 'summary private_clean' );
+ok( $s->private_dirty('/opt/apache22-worker/sbin/httpd')==8, 'summary private_dirty' );
+ok( $s->referenced==25, 'summary referenced' );
 
 SKIP: {
   skip "Your kernel lacks /proc/PID/smaps support", 8
@@ -35,12 +60,15 @@ SKIP: {
   ok eq_set($difflist, [map {[@{$_}[1,0]]} @$difflist2]), 'difflist=difflist2';
   ok eq_set($oldlist, $newlist2), 'oldlist=newlist2';
 
-  my $init=do{local @ARGV=('/proc/1/maps'); (<>)[0]};
-  chomp $init;
-  $init=~s!^.*?/!/!;
-  $init=~s!\s(deleted)$!!;
-  $s->pid=1; $s->update;
-  ok( ($s->vmas)[0]->file_name eq $init, 'check pid==1 to be '.$init );
+  my $pid; sleep 1 until defined( $pid=fork );
+  unless( $pid ) {
+    exec $^X, '-MPOSIX', '-e', 'sleep 10';
+    die;
+  }
+  select undef, undef, undef, .2;  # let the child start up
+  $s->pid=$pid; $s->update;
+  ok scalar( grep {$_->file_name=~/POSIX\.so$/} $s->vmas ), 'other process';
+  kill 'KILL', $pid;
 }
 
 eval {Linux::Smaps->new(0)};
@@ -51,10 +79,6 @@ $s=Linux::Smaps->new(uninitialized=>1);
 $s->pid=-1; $s->update;
 ok $s->lasterror eq "Cannot open /proc/-1/smaps: No such file or directory",
   'error2';
-
-my $fn=$0;
-$fn=~s!/*t/+[^/]*$!! or die "Wrong test script location: $0";
-$fn='.' unless( length $fn );
 
 $s->lasterror=undef;
 $s->pid=undef;

@@ -1,5 +1,13 @@
 Revision history for Perl extension Linux::Smaps.
 
+0.05  Tue Oct  9 10:42:43 CEST 2007
+	- VMA accessor methods and Smaps summary methods are created on
+	  the fly. So, new features added by the kernel won't break the
+	  module easily.
+
+0.04  Mon Oct  8 16:06:07 CEST 2007
+	- small bugfix
+
 0.03  Mon Oct  8 15:34:43 CEST 2007
 	- better error propagation from the constructor
 	- use warnings FATAL

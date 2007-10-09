@@ -7,7 +7,7 @@ no warnings qw(uninitialized portable);
 use Class::Member::HASH qw{pid lasterror filename procdir
 			   _elem -CLASS_MEMBERS};
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 sub new {
   my $class=shift;
@@ -84,6 +84,35 @@ sub update {
       $current->is_deleted=defined( $12 );
     } elsif( $l=~/^(\w+):\s*(\d+) kB$/ ) {
       my $m=lc $1;
+      $m=~s/\s/_/g;
+      unless( $current->can($m) ) {
+	if( $I->can($m) ) {
+	  $I->lasterror=(__PACKAGE__."::$m method is already defined while ".
+			 "Linux::Smaps::VMA::$m is not");
+	  return;
+	}
+
+	no strict 'refs';
+	*{__PACKAGE__."::$m"}=sub {
+	  my $I=shift;
+	  my $n=shift;
+	  my $rc=0;
+	  my @l;
+	  if( length $n ) {
+	    local $_;
+	    @l=grep {$_->file_name eq $n} @{$I->_elem};
+	  } else {
+	    @l=@{$I->_elem};
+	  }
+	  foreach my $el (@l) {
+	    $rc+=$el->$m;
+	  }
+	  return $rc;
+	};
+
+	package Linux::Smaps::VMA;
+	Class::Member::HASH->import($m);
+      }
       $current->$m=$2;
     } else {
       $I->lasterror="$name($.): not parsed: $l";
@@ -97,29 +126,6 @@ sub update {
 }
 
 BEGIN {
-  foreach my $n (qw{size rss shared_clean shared_dirty
-		    private_clean private_dirty}) {
-    eval <<"EOE";
-    sub $n {
-      my \$I=shift;
-      my \$n=shift;
-      my \$rc=0;
-      my \@l;
-      if( length \$n ) {
-	local \$_;
-	\@l=grep {\$_->file_name eq \$n} \@{\$I->_elem};
-      } else {
-	\@l=\@{\$I->_elem};
-      }
-      foreach my \$el (\@l) {
-	\$rc+=\$el->$n;
-      }
-      return \$rc;
-    }
-EOE
-    die "$@" if( $@ );
-  }
-
   foreach my $n (qw{heap stack vdso}) {
     eval <<"EOE";
     sub $n {
@@ -287,9 +293,7 @@ package Linux::Smaps::VMA;
 
 use strict;
 use Class::Member::HASH qw(vma_start vma_end r w x mayshare file_off
-			   dev_major dev_minor inode file_name is_deleted
-			   size rss shared_clean shared_dirty
-			   private_clean private_dirty);
+			   dev_major dev_minor inode file_name is_deleted);
 
 sub new {bless {}=>(ref $_[0] ? ref $_[0] : $_[0]);}
 
@@ -396,7 +400,17 @@ see below.
 
 =item B<< $self->private_dirty >>
 
-these methods compute the sums of the appropriate values of all vmas.
+these methods compute the sums of the corresponding values of all vmas.
+
+C<size>, C<rss>, C<shared_clean>, C<shared_dirty>, C<private_clean> and
+C<private_dirty> methods are unknown until the first call to
+C<Linux::Smaps::update()>. They are created on the fly. This is to make
+the module extendable as new features are added to the smaps file by the
+kernel. As long as the corresponding smaps file lines match
+C<^(\w+):\s*(\d+) kB$> new accessor methods are created.
+
+At the time of this writing at least one new field (C<referenced>) is on
+the way but all my kernels still lack it.
 
 =item B<< $self->stack >>
 
@@ -404,7 +418,7 @@ these methods compute the sums of the appropriate values of all vmas.
 
 =item B<< $self->vdso >>
 
-these are shortcuts to the appropiate C<Linux::Smaps::VMA> objects.
+these are shortcuts to the corresponding C<Linux::Smaps::VMA> objects.
 
 =item B<< $self->all >>
 
@@ -499,6 +513,16 @@ process.
 C<dirty> pages are written to in RAM but not to the corresponding file.
 
 =back
+
+C<size>, C<rss>, C<shared_clean>, C<shared_dirty>, C<private_clean> and
+C<private_dirty> methods are unknown until the first call to
+C<Linux::Smaps::update()>. They are created on the fly. This is to make
+the module extendable as new features are added to the smaps file by the
+kernel. As long as the corresponding smaps file lines match
+C<^(\w+):\s*(\d+) kB$> new accessor methods are created.
+
+At the time of this writing at least one new field (C<referenced>) is on
+the way but all my kernels still lack it.
 
 =head1 Example: The copy-on-write effect
 
