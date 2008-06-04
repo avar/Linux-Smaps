@@ -7,7 +7,7 @@ no warnings qw(uninitialized portable);
 use Class::Member::HASH qw{pid lasterror filename procdir
 			   _elem -CLASS_MEMBERS};
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 sub new {
   my $class=shift;
@@ -52,13 +52,14 @@ sub update {
     $name=$I->procdir.'/'.$I->pid.'/smaps';
   }
 
-  open my $f, $name or do {
+  open my $f, '<', $name or do {
     $I->lasterror="Cannot open $name: $!";
     return;
   };
 
   my $current;
   $I->_elem=[];
+  my %cache;
   my $l;
   while( defined($l=<$f>) ) {
     if( $l=~/([\da-f]+)-([\da-f]+)\s                # range
@@ -69,19 +70,23 @@ sub update {
              (.*?)		                    # file name
 	     (\s\(deleted\))?$
 	    /xi ) {
-      push @{$I->_elem}, $current=Linux::Smaps::VMA->new;
+      $current=Linux::Smaps::VMA->new;
       $current->vma_start=hex $1;
       $current->vma_end=hex $2;
-      $current->r=($3 eq 'r');
-      $current->w=($4 eq 'w');
-      $current->x=($5 eq 'x');
-      $current->mayshare=($6 eq 's');
-      $current->file_off=hex $7;
-      $current->dev_major=hex $8;
-      $current->dev_minor=hex $9;
-      $current->inode=$10;
-      $current->file_name=$11;
-      $current->is_deleted=defined( $12 );
+      unless( exists $cache{$current->vma_start."\0".$current->vma_end} ) {
+	$cache{$current->vma_start."\0".$current->vma_end}=1;
+	push @{$I->_elem}, $current;
+	$current->r=($3 eq 'r');
+	$current->w=($4 eq 'w');
+	$current->x=($5 eq 'x');
+	$current->mayshare=($6 eq 's');
+	$current->file_off=hex $7;
+	$current->dev_major=hex $8;
+	$current->dev_minor=hex $9;
+	$current->inode=$10;
+	$current->file_name=$11;
+	$current->is_deleted=defined( $12 );
+      }
     } elsif( $l=~/^(\w+):\s*(\d+) kB$/ ) {
       my $m=lc $1;
       $m=~s/\s/_/g;
@@ -126,7 +131,7 @@ sub update {
 }
 
 BEGIN {
-  foreach my $n (qw{heap stack vdso}) {
+  foreach my $n (qw{heap stack vdso vsyscall}) {
     eval <<"EOE";
     sub $n {
       my \$I=shift;

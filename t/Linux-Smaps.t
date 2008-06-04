@@ -1,6 +1,8 @@
-use Test::More tests => 34;
+use Test::More tests => 35;
+use POSIX ();
 BEGIN { use_ok('Linux::Smaps') };
 
+POSIX::setlocale( &POSIX::LC_ALL, "C" );
 my ($s, $old);
 
 my $fn=$0;
@@ -118,6 +120,12 @@ SKIP: {
   eval {$s=Linux::Smaps->new(filename=>$fn.'/t/smaps64')};
   ok( $@=~/Integer overflow in hexadecimal number/, "integer overflow" );
 }
+
+my $s1=Linux::Smaps->new(filename=>$fn.'/t/double-vdso');
+my $s2=Linux::Smaps->new(filename=>$fn.'/t/single-vdso');
+
+my ($newlist, $difflist, $oldlist)=$s1->diff( $s2 );
+ok @$newlist==0 && @$difflist==0 && @$oldlist==0, 'double-vdso match single-vdso';
 
 # Local Variables:
 # mode: perl
